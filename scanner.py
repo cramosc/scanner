@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
+
 import argparse
 import xml.etree.ElementTree as ET
 
 import os
+import subprocess
+
 import requests
 import sys
 from PyPDF2 import PdfFileMerger
@@ -51,11 +55,11 @@ def get_page(base_url, job_id):
         try:
             time.sleep(2)
             print('Scanning...')
-            response = requests.get(base_url + '/Scan/Jobs/' + job_id + '/Pages/1')
+            url = base_url + '/Scan/Jobs/' + job_id + '/Pages/1'
+            response = requests.get(url)
             return response.content
         except Exception as error:
             print(repr(error))
-            pass
 
 
 def scan_and_get_content(base_url):
@@ -68,8 +72,26 @@ def scan_and_get_content(base_url):
 def get_file_path():
     current_dir = os.getcwd()
     print('Filename:')
-    filename = sys.stdin.readline()
+    filename = sys.stdin.readline().strip('\n')
+    filename = filename or 'scanned_document'
+    if not filename.endswith('.pdf'):
+        filename += '.pdf'
     return os.path.join(current_dir, filename)
+
+
+def create_temp_file(content, page_number):
+    temp_file = os.path.join(os.getcwd(), '__scanned__document__{}__'.format(page_number))
+    temp_file_broken = temp_file + 'broken'
+    with open(temp_file_broken, 'wb') as f:
+        f.write(content)
+
+    try:
+        subprocess.check_output(['qpdf', temp_file_broken, temp_file], stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError:
+        pass
+
+    os.remove(temp_file_broken)
+    return temp_file
 
 
 def main():
@@ -81,7 +103,7 @@ def main():
         default=IP
     )
     options = parser.parse_args()
-    base_url = f'http://{options.ip}'
+    base_url = 'http://{}'.format(options.ip)
 
     print('Are you ready to scan a document?')
     print('To start press enter')
@@ -90,24 +112,34 @@ def main():
     pdf_merger = PdfFileMerger()
 
     another_page = True
+    page_number = 1
+    temp_files = []
     while another_page:
         try:
             content = scan_and_get_content(base_url)
-            pdf_merger.append(content)
+            temp_file = create_temp_file(content, page_number)
+
+            pdf_merger.append(temp_file)
+            temp_files.append(temp_file)
         except Exception as error:
             print('Error:', repr(error))
-            print(f'Is the ip {options.ip} correct?')
+            print('Is the ip {} correct?'.format(options.ip))
+            return 1
         else:
             print('Another page? [y]/n')
-            another = sys.stdin.readline()
-            another_page = another.lower() in ('n', 'no')
+            another = sys.stdin.readline().strip('\n')
+            another_page = another.lower() not in ('n', 'no')
+            page_number += 1
 
     file_path = get_file_path()
     with open(file_path, 'wb') as f:
         pdf_merger.write(f)
 
+    for temp in temp_files:
+        os.remove(temp)
+
     print('Completed')
-    print(f'Scanned document written in {file_path}')
+    print('Scanned document written in {}'.format(file_path))
 
 
 if __name__ == '__main__':
