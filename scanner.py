@@ -86,6 +86,7 @@ def create_temp_file(content, page_number):
         f.write(content)
 
     try:
+        # repair broken pdf
         subprocess.check_output(['qpdf', temp_file_broken, temp_file], stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError:
         pass
@@ -112,12 +113,11 @@ def main():
     pdf_merger = PdfFileMerger()
 
     another_page = True
-    page_number = 1
     temp_files = []
     while another_page:
         try:
             content = scan_and_get_content(base_url)
-            temp_file = create_temp_file(content, page_number)
+            temp_file = create_temp_file(content, len(temp_files) + 1)
 
             pdf_merger.append(temp_file)
             temp_files.append(temp_file)
@@ -129,7 +129,6 @@ def main():
             print('Another page? [y]/n')
             another = sys.stdin.readline().strip('\n')
             another_page = another.lower() not in ('n', 'no')
-            page_number += 1
 
     file_path = get_file_path()
     with open(file_path, 'wb') as f:
